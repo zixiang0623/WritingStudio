@@ -82,10 +82,10 @@
         }
 
         /* Font themes */
-        body.font-serif textarea { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'MS PMincho', serif; }
-        body.font-mincho textarea { font-family: 'Georgia', 'Times New Roman', serif; }
-        body.font-rounded textarea { font-family: 'Hiragino Maru Gothic ProN', 'UD Digi Kyokasho N-R', 'Comic Sans MS', sans-serif; }
-        body.font-mono textarea { font-family: 'SF Mono', 'MS Gothic', Consolas, monospace; }
+        body.font-serif textarea, body.font-serif .ghost-overlay, body.font-serif .typo-overlay { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'MS PMincho', serif; }
+        body.font-mincho textarea, body.font-mincho .ghost-overlay, body.font-mincho .typo-overlay { font-family: 'Georgia', 'Times New Roman', serif; }
+        body.font-rounded textarea, body.font-rounded .ghost-overlay, body.font-rounded .typo-overlay { font-family: 'Hiragino Maru Gothic ProN', 'UD Digi Kyokasho N-R', 'Comic Sans MS', sans-serif; }
+        body.font-mono textarea, body.font-mono .ghost-overlay, body.font-mono .typo-overlay { font-family: 'SF Mono', 'MS Gothic', Consolas, monospace; }
 
         /* Layout */
         .container {
@@ -156,6 +156,59 @@
             position: relative;
         }
 
+        /* AI作動中の虹色光沢ボーダーアニメーション */
+        @keyframes liquid-slide {
+            0%   { background-position: 0% 50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes liquid-glow-pulse {
+            0%, 100% { opacity: 0.9; }
+            50%       { opacity: 1;   }
+        }
+
+        .editor-wrapper.ai-active::before,
+        .editor-wrapper.ai-active::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 14px;
+            z-index: 0;
+        }
+
+        .editor-wrapper.ai-active::before {
+            background: linear-gradient(
+                270deg,
+                #ff0080, #ff4500, #ffcc00,
+                #00ff88, #00cfff, #7b2fff,
+                #ff0080, #ff4500
+            );
+            background-size: 400% 400%;
+            animation: liquid-slide 3s ease infinite, liquid-glow-pulse 2s ease-in-out infinite;
+        }
+
+        .editor-wrapper.ai-active::after {
+            inset: 0px;
+            background: linear-gradient(
+                270deg,
+                rgba(255,0,128,0.3), rgba(255,69,0,0.3), rgba(255,204,0,0.3),
+                rgba(0,255,136,0.3), rgba(0,207,255,0.3), rgba(123,47,255,0.3),
+                rgba(255,0,128,0.3), rgba(255,69,0,0.3)
+            );
+            background-size: 400% 400%;
+            animation: liquid-slide 3s ease infinite;
+            filter: blur(10px);
+            border-radius: 16px;
+            z-index: 0;
+        }
+
+        .editor-wrapper.ai-active textarea {
+            position: relative;
+            z-index: 1;
+            border-color: transparent;
+        }
+
         textarea {
             flex: 1;
             padding: 20px;
@@ -183,8 +236,8 @@
             top: 0;
             left: 50%;
             transform: translateX(-50%);
-            width: 480px;
-            height: 80px;
+            width: 456px;
+            height: 50px;
             z-index: 39;
         }
 
@@ -218,8 +271,8 @@
             bottom: 0;
             left: 50%;
             transform: translateX(-50%);
-            width: 480px;
-            height: 80px;
+            width: 456px;
+            height: 50px;
             z-index: 39;
         }
 
@@ -240,6 +293,8 @@
             pointer-events: none;
             z-index: 40;
             box-shadow: var(--shadow-lg);
+            overflow: visible;
+            white-space: nowrap;
         }
 
         .settings-trigger:hover .settings-bar {
@@ -427,7 +482,6 @@
         .goal-ring svg {
             width: 100%;
             height: 100%;
-            transform: rotate(-90deg);
         }
 
         .goal-ring-track {
@@ -491,6 +545,559 @@
         .goal-toast.show {
             opacity: 1;
             transform: translateX(-50%) translateY(0);
+        }
+
+        /* AI機能群 */
+        /* ===== Recall Island (左辺) ===== */
+        .recall-trigger {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px;
+            height: 280px;
+            z-index: 39;
+        }
+
+        .recall-bar {
+            position: fixed;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%) translateX(-12px) scale(0.92);
+            width: 36px;
+            background: rgba(26,26,26,0.82);
+            border-radius: 999px;
+            padding: 10px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease-out, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+            box-shadow: var(--shadow-lg);
+            z-index: 40;
+            user-select: none;
+            max-height: 70vh;
+        }
+
+        .recall-trigger:hover .recall-bar,
+        .recall-bar.force-show {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .recall-label {
+            font-size: 9px;
+            color: rgba(255,255,255,0.5);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            writing-mode: horizontal-tb;
+        }
+
+        .recall-slider-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding: 0 6px;
+            position: relative;
+        }
+
+        .recall-slider {
+            -webkit-appearance: slider-vertical;
+            appearance: slider-vertical;
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 4px;
+            height: 180px;
+            cursor: pointer;
+            accent-color: var(--color-accent);
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
+            outline: none;
+            border: none;
+            transform: scaleY(-1);
+        }
+
+        .recall-time-display {
+            font-size: 9px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 6px;
+            text-align: center;
+            min-height: 24px;
+            line-height: 1.4;
+            white-space: nowrap;
+        }
+
+        .recall-count {
+            font-size: 9px;
+            color: rgba(255,255,255,0.35);
+            margin-top: 2px;
+        }
+
+        .recall-save-btn {
+            margin-top: 8px;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+            transition: background 0.15s ease, transform 0.15s ease;
+        }
+
+        .recall-save-btn:hover {
+            background: rgba(99,102,241,0.35);
+            border-color: var(--color-accent);
+            transform: scale(1.1);
+        }
+
+        .recall-save-btn.saved {
+            background: rgba(16,185,129,0.35);
+            border-color: var(--color-success);
+        }
+
+        .recall-hint {
+            position: fixed;
+            left: 56px;
+            bottom: 8px;
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            background: var(--color-surface);
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--color-border);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 50;
+        }
+
+        .recall-hint.show {
+            opacity: 0.9;
+        }
+
+        /* Recall プレビュー時のtextareaオーバーレイ */
+        .recall-overlay {
+            position: absolute;
+            inset: 0;
+            padding: 20px;
+            border: 1px solid transparent;
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            pointer-events: none;
+            color: transparent;
+            overflow: hidden;
+            z-index: 3;
+        }
+
+        .recall-preview-text {
+            color: var(--color-text-secondary);
+            opacity: 0.6;
+        }
+
+        /* Recallプレビュー中はtextareaのテキストを非表示 */
+        .editor-wrapper.recall-previewing textarea {
+            color: transparent;
+            caret-color: transparent;
+        }
+
+        .editor-wrapper.recall-previewing .recall-overlay {
+            pointer-events: none;
+        }
+
+        /* 設定ペイン内のRecall間隔設定 */
+        .recall-interval-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .recall-interval-row label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+            white-space: nowrap;
+        }
+
+        .recall-interval-btns {
+            display: flex;
+            gap: 4px;
+            flex-wrap: nowrap;
+            align-items: center;
+        }
+
+        .recall-interval-btns .recall-interval-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.7);
+            border-radius: 6px;
+            padding: 3px 7px !important;
+            font-size: 10px;
+            line-height: 1.4;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .recall-interval-btns .recall-interval-btn.active {
+            background: var(--color-accent);
+            border-color: var(--color-accent);
+            color: #fff;
+        }
+
+        .recall-settings-row .recall-clear-btn {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.5);
+            border-radius: 6px;
+            padding: 3px 8px !important;
+            font-size: 10px;
+            line-height: 1.4;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .recall-settings-row .recall-clear-btn:hover {
+            background: rgba(239,68,68,0.2);
+            border-color: rgba(239,68,68,0.4);
+            color: #ff6b6b;
+        }
+
+        .recall-settings-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+
+        .recall-settings-label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+            white-space: nowrap;
+        }
+
+        .ai-trigger {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 228px;
+            height: 85.5px;
+            z-index: 39;
+        }
+
+        .ai-bar {
+            position: fixed;
+            top: 12px;
+            right: 20px;
+            padding: 8px 12px;
+            background: rgba(26, 26, 26, 0.8);
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transform: translateY(-10px) scale(0.9);
+            transition: opacity 0.25s ease-out, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+            z-index: 40;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .ai-trigger:hover .ai-bar,
+        .ai-bar.force-show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .ai-btn {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            position: relative;
+        }
+
+        .ai-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .ai-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .ai-btn.loading::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: var(--color-accent);
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .ai-key-btn {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.5);
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+
+        .ai-key-btn.set {
+            color: var(--color-success);
+        }
+
+        .ai-key-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* ゴーストテキスト（続きを書く） */
+        .ghost-overlay {
+            position: absolute;
+            inset: 0;
+            padding: 20px;
+            border: 1px solid transparent;
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            pointer-events: none;
+            color: transparent;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        .ghost-overlay .ghost-text {
+            color: var(--color-text-secondary);
+            opacity: 0.55;
+        }
+
+        .ghost-hint {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            background: var(--color-surface);
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--color-border);
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+            pointer-events: none;
+        }
+
+        .ghost-hint.show {
+            opacity: 0.9;
+        }
+
+        /* APIキー設定パネル */
+        .ai-key-panel {
+            position: fixed;
+            top: 56px;
+            right: 20px;
+            width: 280px;
+            padding: 16px;
+            background: rgba(26, 26, 26, 0.95);
+            border-radius: 14px;
+            opacity: 0;
+            transform: translateY(-10px) scale(0.95);
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+            pointer-events: none;
+            z-index: 50;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .ai-key-panel.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .ai-key-panel-title {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 8px;
+        }
+
+        .ai-key-panel input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            margin-bottom: 8px;
+            outline: none;
+        }
+
+        .ai-key-panel-buttons {
+            display: flex;
+            gap: 6px;
+        }
+
+        .ai-key-panel button.primary {
+            flex: 1;
+            padding: 7px 10px;
+            font-size: 12px;
+            background: var(--color-accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 600;
+        }
+
+        .ai-key-panel button.ghost {
+            padding: 7px 10px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .ai-key-panel-note {
+            font-size: 10px;
+            color: rgba(255,255,255,0.35);
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+
+        /* 誤字脱字ハイライト */
+        .editor-wrapper {
+            position: relative;
+        }
+
+        .typo-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 20px;
+            border: 1px solid transparent;
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            pointer-events: none;
+            color: transparent;
+            overflow: hidden;
+            z-index: 2;
+        }
+
+        .typo-mark {
+            text-decoration: underline wavy var(--color-danger);
+            text-decoration-skip-ink: none;
+            text-decoration-thickness: 2px;
+            pointer-events: auto;
+            cursor: pointer;
+            color: transparent;
+        }
+
+        .typo-mark.review {
+            text-decoration-color: #4A90D9;
+        }
+
+        .typo-tooltip {
+            position: absolute;
+            background: rgba(26, 26, 26, 0.95);
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+            max-width: 280px;
+            white-space: normal;
+            word-break: break-word;
+            z-index: 60;
+            box-shadow: var(--shadow-lg);
+            display: none;
+        }
+
+        .typo-tooltip.show {
+            display: block;
+        }
+
+        .typo-tooltip-label {
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .typo-tooltip button {
+            margin-top: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            background: var(--color-accent);
+            border: none;
+            border-radius: 5px;
+            color: #fff;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            display: block;
+            width: 100%;
+        }
+
+        .typo-tooltip button.review-btn {
+            background: #4A90D9;
         }
 
         /* Sidebar */
@@ -742,8 +1349,15 @@
                     <textarea 
                         id="editor" 
                         placeholder="執筆を始めましょう。ここは邪魔なものはありません。"
-                        oninput="updateStats(); autoSave()"
+                        oninput="updateStats(); autoSave(); onEditorInput();"
+                        onkeydown="onEditorKeydown(event)"
+                        onscroll="syncOverlayScroll()"
                     ></textarea>
+                    <div class="ghost-overlay" id="ghostOverlay"></div>
+                    <div class="typo-overlay" id="typoOverlay"></div>
+                    <div class="recall-overlay" id="recallOverlay"></div>
+                    <div class="ghost-hint" id="ghostHint">Tab で確定 / Esc で取り消し</div>
+                    <div class="typo-tooltip" id="typoTooltip"></div>
                 </div>
             </div>
         </div>
@@ -791,6 +1405,45 @@
         <!-- Goal Achieved Toast -->
         <div class="goal-toast" id="goalToast">🎉 目標達成しました！</div>
 
+        <!-- Recall Island (左辺) -->
+        <div class="recall-trigger">
+            <div class="recall-bar" id="recallBar">
+                <div class="recall-label">Recall</div>
+                <div class="recall-slider-wrap">
+                    <input type="range" class="recall-slider" id="recallSlider"
+                           min="0" max="0" value="0" step="1"
+                           oninput="onRecallSlide(this.value)">
+                </div>
+                <div class="recall-time-display" id="recallTimeDisplay">—</div>
+                <div class="recall-count" id="recallCount">0件</div>
+                <button class="recall-save-btn" id="recallSaveBtn" onclick="recallManualSave()" title="今すぐ保存">💾</button>
+            </div>
+        </div>
+        <div class="recall-hint" id="recallHint">Tab で復元 / Esc でキャンセル</div>
+
+        <!-- AI Bar -->
+        <div class="ai-trigger">
+        <div class="ai-bar" id="aiBar">
+            <button class="ai-btn" id="continueBtn" onclick="requestContinue()" title="続きを書く">✨</button>
+            <button class="ai-btn" id="reviewBtn" onclick="requestReview()" title="校正・推敲提案">📝</button>
+            <button class="ai-btn" id="typoBtn" onclick="requestTypoCheck()" title="誤字脱字チェック">🔍</button>
+            <button class="ai-key-btn" id="aiKeyBtn" onclick="toggleKeyPanel()" title="APIキー設定">🔑</button>
+        </div>
+        </div>
+
+        <!-- API Key Panel -->
+        <div class="ai-key-panel" id="aiKeyPanel">
+            <div class="ai-key-panel-title">Gemini APIキー設定</div>
+            <input type="password" id="aiKeyInput" placeholder="APIキーを入力">
+            <div class="ai-key-panel-buttons">
+                <button class="primary" onclick="saveApiKey()">保存</button>
+                <button class="ghost" onclick="toggleKeyPanel()">閉じる</button>
+            </div>
+            <div class="ai-key-panel-note">
+                キーはこの端末のブラウザ内（localStorage）にのみ保存され、外部には送信されません。Google AI Studio（aistudio.google.com）で発行したキーを利用できます。共有PCでは入力しないことをおすすめします。
+            </div>
+        </div>
+
         <!-- Settings Bar -->
         <div class="settings-trigger">
         <div class="settings-bar" id="settingsBar">
@@ -814,36 +1467,117 @@
                     <button class="font-swatch" data-font="mono" style="font-family:'SF Mono','MS Gothic',Consolas,monospace" onclick="applyFont('mono')" title="等幅">あ</button>
                 </div>
             </div>
+            <div class="settings-group">
+                <div class="recall-settings-row">
+                    <span class="recall-settings-label">保存間隔</span>
+                    <div class="recall-interval-btns" id="recallIntervalBtns">
+                        <button class="recall-interval-btn" data-sec="10" onclick="setRecallInterval(10)">10秒</button>
+                        <button class="recall-interval-btn" data-sec="30" onclick="setRecallInterval(30)">30秒</button>
+                        <button class="recall-interval-btn active" data-sec="60" onclick="setRecallInterval(60)">1分</button>
+                        <button class="recall-interval-btn" data-sec="120" onclick="setRecallInterval(120)">2分</button>
+                        <button class="recall-interval-btn" data-sec="300" onclick="setRecallInterval(300)">5分</button>
+                        <button class="recall-interval-btn" data-sec="600" onclick="setRecallInterval(600)">10分</button>
+                    </div>
+                    <button onclick="recallClearAll()" class="recall-clear-btn">全削除</button>
+                </div>
+            </div>
         </div>
         </div>
 
     <script>
+        // ============================================
+        // ストレージ層（全てlocalStorage）
+        // ============================================
+
+        function lsGet(key) {
+            return localStorage.getItem('ws_' + key) ?? undefined;
+        }
+        function lsSet(key, value) {
+            localStorage.setItem('ws_' + key, String(value));
+        }
+        function lsDel(key) {
+            localStorage.removeItem('ws_' + key);
+        }
+
+        // Recallスナップショット専用（JSON配列でまとめて保存）
+        function snapshotLoad() {
+            try { return JSON.parse(localStorage.getItem('ws_snapshots') || '[]'); }
+            catch(e) { return []; }
+        }
+        function snapshotSave(arr) {
+            // 新しい順50件に絞って保存
+            const trimmed = arr.slice(0, 50);
+            try { localStorage.setItem('ws_snapshots', JSON.stringify(trimmed)); }
+            catch(e) {
+                // localStorageがQuotaを超えた場合は古いものを削って再試行
+                const half = trimmed.slice(0, Math.floor(trimmed.length / 2));
+                try { localStorage.setItem('ws_snapshots', JSON.stringify(half)); } catch(e2) {}
+            }
+        }
+
+        // 後方互換エイリアス（既存呼び出し箇所はそのまま）
+        async function idbGet(store, key)        { return lsGet(key); }
+        async function idbPut(store, value, key) { lsSet(key, value); }
+        async function idbDelete(store, key)     { lsDel(key); }
+
+        // ============================================
         // State Management
-        let content = localStorage.getItem('writing') || '';
-        let goalTarget = parseInt(localStorage.getItem('goalTarget')) || 0;
+        // ============================================
+        let content    = '';
+        let goalTarget = 0;
         let goalAchievedShown = false;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             const editor = document.getElementById('editor');
-            editor.value = content;
-            if (goalTarget > 0) {
-                document.getElementById('goalInput').value = goalTarget;
-            }
-            updateStats();
 
-            const savedBg = localStorage.getItem('bgTheme') || 'white';
-            const savedFont = localStorage.getItem('fontTheme') || 'system';
+            // --- 設定復元（localStorage・即時同期） ---
+            const savedContent = lsGet('writing');
+            if (savedContent) { content = savedContent; editor.value = content; }
+
+            const savedGoal = lsGet('goalTarget');
+            if (savedGoal) {
+                goalTarget = parseInt(savedGoal) || 0;
+                if (goalTarget > 0) document.getElementById('goalInput').value = goalTarget;
+            }
+
+            const savedBg   = lsGet('bgTheme')   || 'white';
+            const savedFont = lsGet('fontTheme') || 'system';
             document.body.classList.add('bg-' + savedBg);
             if (savedFont !== 'system') document.body.classList.add('font-' + savedFont);
             document.querySelector(`.bg-swatch[data-bg="${savedBg}"]`).classList.add('active');
             document.querySelector(`.font-swatch[data-font="${savedFont}"]`).classList.add('active');
+
+            const savedInterval = lsGet('recallInterval');
+            if (savedInterval) {
+                _recallIntervalSec = parseInt(savedInterval);
+                document.querySelectorAll('.recall-interval-btn').forEach(btn => {
+                    btn.classList.toggle('active', parseInt(btn.dataset.sec) === _recallIntervalSec);
+                });
+            }
+
+            const savedKey = lsGet('geminiApiKey');
+            if (savedKey) { _cachedApiKey = savedKey; apiKeySet = true; updateKeyBtnState(); }
+
+            updateStats();
+            recallInit();
+
+            editor.addEventListener('input', recallIdleReset);
+
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    saveAll();
+                }
+            });
+
+            setInterval(autoSave, 5000);
         });
 
         function applyBg(val) {
             document.body.classList.remove('bg-white','bg-cream','bg-gray','bg-dark','bg-mint');
             document.body.classList.add('bg-' + val);
-            localStorage.setItem('bgTheme', val);
+            idbPut('settings', val, 'bgTheme');
             document.querySelectorAll('.bg-swatch').forEach(el => el.classList.remove('active'));
             document.querySelector(`.bg-swatch[data-bg="${val}"]`).classList.add('active');
         }
@@ -851,7 +1585,7 @@
         function applyFont(val) {
             document.body.classList.remove('font-serif','font-mincho','font-rounded','font-mono');
             if (val !== 'system') document.body.classList.add('font-' + val);
-            localStorage.setItem('fontTheme', val);
+            idbPut('settings', val, 'fontTheme');
             document.querySelectorAll('.font-swatch').forEach(el => el.classList.remove('active'));
             document.querySelector(`.font-swatch[data-font="${val}"]`).classList.add('active');
         }
@@ -888,10 +1622,10 @@
                 document.getElementById('goalRingText').textContent = pct + '%';
                 document.getElementById('goalText').textContent = `${charCount.toLocaleString('ja-JP')} / ${goalTarget.toLocaleString('ja-JP')}字`;
 
-                if (pct >= 100 && !goalAchievedShown) {
+                if (charCount >= goalTarget && !goalAchievedShown) {
                     goalAchievedShown = true;
                     showGoalToast();
-                } else if (pct < 100) {
+                } else if (charCount < goalTarget) {
                     goalAchievedShown = false;
                 }
             } else {
@@ -905,13 +1639,13 @@
             if (!val || val <= 0) return;
             goalTarget = val;
             goalAchievedShown = false;
-            localStorage.setItem('goalTarget', goalTarget);
+            idbPut('settings', goalTarget, 'goalTarget');
             updateStats();
         }
 
         function clearGoalTarget() {
             goalTarget = 0;
-            localStorage.removeItem('goalTarget');
+            idbDelete('settings', 'goalTarget');
             document.getElementById('goalInput').value = '';
             updateStats();
         }
@@ -922,20 +1656,37 @@
             setTimeout(() => toast.classList.remove('show'), 2000);
         }
 
+        const wordSegmenter = (typeof Intl !== 'undefined' && Intl.Segmenter)
+            ? new Intl.Segmenter('ja', { granularity: 'word' })
+            : null;
+
         function countWords(text) {
-            // 日本語テキストの単語数カウント（文字数を参考値として）
+            if (!text) return 0;
+            if (wordSegmenter) {
+                let count = 0;
+                for (const seg of wordSegmenter.segment(text)) {
+                    if (seg.isWordLike) count++;
+                }
+                return count;
+            }
+            // Intl.Segmenter非対応ブラウザ向けフォールバック
             const hiragana = text.match(/[\u3040-\u309F]/g) || [];
             const katakana = text.match(/[\u30A0-\u30FF]/g) || [];
             const kanji = text.match(/[\u4E00-\u9FFF]/g) || [];
             const english = text.match(/[a-zA-Z]+/g) || [];
-            
             return Math.max(1, Math.floor((hiragana.length + katakana.length + kanji.length) / 3 + english.length));
         }
 
-        // Auto Save
+        // Auto Save（本文をsettingsテーブルに保存）
         function autoSave() {
             content = document.getElementById('editor').value;
-            localStorage.setItem('writing', content);
+            lsSet('writing', content);
+        }
+
+        // saveAll: autoSave + recallSave を両方実行する統一保存関数
+        async function saveAll() {
+            autoSave();
+            await recallSave();
         }
 
         function exportMD() {
@@ -951,8 +1702,590 @@
 
         // Export & Download
 
-        // Auto-save timer
-        setInterval(autoSave, 5000);
+        // ============================================
+        // AI機能（Gemini API / キーはlocalStorageにのみ保存）
+        // ============================================
+
+        const GEMINI_MODEL = 'gemini-2.5-flash';
+        let apiKeySet = false; // IDB起動後に復元
+        let _cachedApiKey = '';
+        let ghostText = '';
+        let typoIssues = [];
+        let typoCheckTimer = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateKeyBtnState();
+            const aiKeyPanel = document.getElementById('aiKeyPanel');
+            const aiBar = document.getElementById('aiBar');
+
+            aiKeyPanel.addEventListener('mouseenter', () => aiBar.classList.add('force-show'));
+            aiKeyPanel.addEventListener('mouseleave', () => updateAiBarForceShow());
+        });
+
+        function updateAiBarForceShow() {
+            const aiKeyPanel = document.getElementById('aiKeyPanel');
+            const aiBar = document.getElementById('aiBar');
+            aiBar.classList.toggle('force-show', aiKeyPanel.classList.contains('show'));
+        }
+
+        function updateKeyBtnState() {
+            const btn = document.getElementById('aiKeyBtn');
+            btn.classList.toggle('set', apiKeySet);
+        }
+
+        function toggleKeyPanel() {
+            document.getElementById('aiKeyPanel').classList.toggle('show');
+            updateAiBarForceShow();
+        }
+
+        function saveApiKey() {
+            const val = document.getElementById('aiKeyInput').value.trim();
+            if (!val) return;
+            idbPut('settings', val, 'geminiApiKey');
+            _cachedApiKey = val;
+            apiKeySet = true;
+            document.getElementById('aiKeyInput').value = '';
+            updateKeyBtnState();
+            toggleKeyPanel();
+        }
+
+        function getApiKey() {
+            // IDB同期取得は不可のため、起動時にキャッシュした値を使う
+            return _cachedApiKey || '';
+        }
+
+        // Gemini API 呼び出し共通関数
+        async function callGemini(prompt) {
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                toggleKeyPanel();
+                throw new Error('APIキーが未設定です');
+            }
+
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+            let response;
+            try {
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                });
+            } catch (networkErr) {
+                throw new Error('接続に失敗しました（ネットワークまたはCORSの問題の可能性があります）');
+            }
+
+            if (!response.ok) {
+                const errBody = await response.text();
+                if (response.status === 429) {
+                    throw new Error('利用上限に達しました。しばらく時間を置いてから再度お試しください');
+                }
+                throw new Error(`Gemini APIエラー (${response.status}): ${errBody.slice(0, 200)}`);
+            }
+
+            const data = await response.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('応答が空でした');
+            return text.trim();
+        }
+
+        function showAiError(message) {
+            const toast = document.createElement('div');
+            toast.className = 'goal-toast show';
+            toast.style.background = 'var(--color-danger)';
+            toast.textContent = '⚠️ ' + message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 2500);
+        }
+
+        // ---- 1. 続きを書く（オートコンプリート） ----
+        async function requestContinue() {
+            const editor = document.getElementById('editor');
+            const text = editor.value;
+            if (!text.trim()) return;
+
+            const btn = document.getElementById('continueBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+            setAiActive(true);
+
+            try {
+                const prompt = `以下の文章の続きを、文体・トーンを保ったまま自然に50字程度で書いてください。地の文のみ出力し、前置きや説明、引用符は一切含めないこと。\n\n---\n${text}`;
+                ghostText = await callGemini(prompt);
+            } catch (e) {
+                setAiActive(false);
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                if (e.message !== 'APIキーが未設定です') showAiError(e.message);
+                return;
+            }
+
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setAiActive(false);
+            showGhostText(editor, ghostText);
+        }
+
+        function showGhostText(editor, text) {
+            const overlay = document.getElementById('ghostOverlay');
+            const current = editor.value;
+            // 本文部分は visibility:hidden 相当にして高さ・位置だけ合わせ、続き部分のみ見せる
+            overlay.innerHTML = '<span style="visibility:hidden">' + escapeHtml(current) + '</span><span class="ghost-text">' + escapeHtml(text) + '</span>';
+            document.getElementById('ghostHint').classList.add('show');
+            syncOverlayScroll();
+        }
+
+        function clearGhostText() {
+            ghostText = '';
+            document.getElementById('ghostOverlay').innerHTML = '';
+            document.getElementById('ghostHint').classList.remove('show');
+        }
+
+        function onEditorInput() {
+            if (ghostText) clearGhostText();
+            scheduleTypoCheck();
+        }
+
+        function syncOverlayScroll() {
+            const editor = document.getElementById('editor');
+            document.getElementById('ghostOverlay').scrollTop = editor.scrollTop;
+            document.getElementById('typoOverlay').scrollTop = editor.scrollTop;
+        }
+
+        // ---- 2. 誤字脱字チェック ----
+        function scheduleTypoCheck() {
+            clearTimeout(typoCheckTimer);
+            typoCheckTimer = setTimeout(() => {
+                // デモでは自動実行はせず、ボタン操作時のみチェックする方針を踏襲。
+                // ここでは入力停止を検知するのみで、実行は requestTypoCheck() に委ねる。
+            }, 2000);
+        }
+
+        async function requestTypoCheck() {
+            const editor = document.getElementById('editor');
+            const text = editor.value;
+            if (!text.trim()) return;
+
+            const btn = document.getElementById('typoBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+            setAiActive(true);
+
+            try {
+                const prompt = `以下の日本語の文章から、誤字・脱字・明確な文法ミス・表記ゆれのみを検出してください。主観的な言い換え提案は含めないこと。\n` +
+                    `JSON配列のみを出力し、それ以外のテキスト（前置き、説明、コードブロック記号）は一切含めないこと。\n` +
+                    `各要素は { "original": "誤った箇所の原文そのまま", "suggestion": "修正案", "type": "誤字|脱字|文法|表記ゆれ" } の形式とすること。\n` +
+                    `該当箇所がなければ空配列 [] のみを返すこと。\n\n` +
+                    `文章:\n${text}`;
+
+                const raw = await callGemini(prompt);
+                const found = parseIssuesFromAi(raw, text, 'typo');
+
+                // 誤字チェック結果は既存の誤字マークだけ入れ替え、推敲マークは残す
+                typoIssues = typoIssues.filter(t => t.category !== 'typo').concat(found);
+            } catch (e) {
+                setAiActive(false);
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                if (e.message !== 'APIキーが未設定です') showAiError(e.message || 'チェックに失敗しました');
+                return;
+            }
+
+            setAiActive(false);
+            btn.classList.remove('loading');
+            btn.disabled = false;
+
+            renderTypoOverlay();
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // AIの返したJSON文字列から、本文中の位置を特定したissueリストを作る共通処理
+        let _issueIdCounter = 0;
+        let _aiActiveCount = 0;
+
+        function setAiActive(on) {
+            _aiActiveCount = Math.max(0, _aiActiveCount + (on ? 1 : -1));
+            document.querySelector('.editor-wrapper').classList.toggle('ai-active', _aiActiveCount > 0);
+        }
+
+        function parseIssuesFromAi(raw, text, category) {
+            const cleaned = raw.replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+            const issues = [];
+
+            parsed.forEach(item => {
+                if (!item.original) return;
+                // 大文字小文字を区別せず検索（ただし実際に本文に存在する文字列のままで記録）
+                const lowerText = text.toLowerCase();
+                const lowerOrig = item.original.toLowerCase();
+                let searchFrom = 0;
+                let idx;
+                while ((idx = lowerText.indexOf(lowerOrig, searchFrom)) !== -1) {
+                    issues.push({
+                        id: ++_issueIdCounter,
+                        start: idx,
+                        end: idx + item.original.length,
+                        original: text.slice(idx, idx + item.original.length), // 本文中の実際の文字列
+                        suggestion: item.suggestion || '',
+                        type: item.type || '指摘',
+                        category
+                    });
+                    searchFrom = idx + item.original.length;
+                }
+            });
+            return issues;
+        }
+
+        function renderTypoOverlay() {
+            const editor = document.getElementById('editor');
+            const text = editor.value;
+            const overlay = document.getElementById('typoOverlay');
+
+            if (typoIssues.length === 0) {
+                overlay.innerHTML = escapeHtml(text);
+                return;
+            }
+
+            let html = '<span style="visibility:hidden">';
+            let cursor = 0;
+            typoIssues
+                .slice()
+                .sort((a, b) => a.start - b.start)
+                .forEach(issue => {
+                    if (issue.start < cursor) return;
+                    html += escapeHtml(text.slice(cursor, issue.start));
+                    const cls = issue.category === 'review' ? 'typo-mark review' : 'typo-mark';
+                    html += `</span><span class="${cls}" data-id="${issue.id}" onmouseenter="showTypoTooltipById(event, ${issue.id})" onmouseleave="hideTypoTooltip()">${escapeHtml(text.slice(issue.start, issue.end))}</span><span style="visibility:hidden">`;
+                    cursor = issue.end;
+                });
+            html += escapeHtml(text.slice(cursor)) + '</span>';
+            overlay.innerHTML = html;
+            syncOverlayScroll();
+        }
+
+        function showTypoTooltipById(e, id) {
+            const issue = typoIssues.find(t => t.id === id);
+            if (!issue) return;
+            const tooltip = document.getElementById('typoTooltip');
+            const wrapper = document.querySelector('.editor-wrapper');
+            clearTimeout(tooltip._hideTimer);
+
+            const btnClass = issue.category === 'review' ? 'review-btn' : '';
+            const btnLabel = issue.category === 'review' ? '適用する' : '修正する';
+            tooltip.innerHTML = `<span class="typo-tooltip-label">${escapeHtml(issue.type)}：「${escapeHtml(issue.original)}」→「${escapeHtml(issue.suggestion)}」</span><button class="${btnClass}" onclick="applyTypoFixById(${id})">${btnLabel}</button>`;
+
+            const rect = e.target.getBoundingClientRect();
+            const wrapperRect = wrapper.getBoundingClientRect();
+            tooltip.style.left = Math.min(rect.left - wrapperRect.left, wrapperRect.width - 280 - 20) + 'px';
+            tooltip.style.top = (rect.bottom - wrapperRect.top + 2) + 'px';
+            tooltip.style.paddingTop = '10px';
+            tooltip.style.marginTop = '-2px';
+            tooltip.classList.add('show');
+            tooltip.onmouseenter = () => clearTimeout(tooltip._hideTimer);
+            tooltip.onmouseleave = hideTypoTooltip;
+        }
+
+        // 旧showTypoTooltipはIDベースに統一したので削除（後方互換のためエイリアス）
+        function showTypoTooltip(e, id) { showTypoTooltipById(e, id); }
+
+        function hideTypoTooltip() {
+            const tooltip = document.getElementById('typoTooltip');
+            tooltip._hideTimer = setTimeout(() => {
+                tooltip.classList.remove('show');
+            }, 250);
+        }
+
+        function applyTypoFixById(id) {
+            const issueIdx = typoIssues.findIndex(t => t.id === id);
+            if (issueIdx === -1) return;
+            const issue = typoIssues[issueIdx];
+            const editor = document.getElementById('editor');
+            const text = editor.value;
+
+            // 念のため本文中の実際の位置を再検索して照合
+            const actualText = text.slice(issue.start, issue.end);
+            if (actualText.toLowerCase() !== issue.original.toLowerCase()) {
+                // ズレていたら波線だけ消してリセット
+                typoIssues.splice(issueIdx, 1);
+                document.getElementById('typoTooltip').classList.remove('show');
+                renderTypoOverlay();
+                return;
+            }
+
+            editor.value = text.slice(0, issue.start) + issue.suggestion + text.slice(issue.end);
+
+            const diff = issue.suggestion.length - (issue.end - issue.start);
+            typoIssues.splice(issueIdx, 1);
+            typoIssues.forEach(t => {
+                if (t.start >= issue.end) {
+                    t.start += diff;
+                    t.end += diff;
+                }
+            });
+
+            document.getElementById('typoTooltip').classList.remove('show');
+            updateStats();
+            autoSave();
+            renderTypoOverlay();
+        }
+
+        // 旧applyTypoFixはIDベースに統一
+        function applyTypoFix(id) { applyTypoFixById(id); }
+
+        // ---- 3. 校正・推敲提案（誤字脱字チェックと同じ仕組み・青波線） ----
+        async function requestReview() {
+            const editor = document.getElementById('editor');
+            const text = editor.value;
+            if (!text.trim()) return;
+
+            const btn = document.getElementById('reviewBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+            setAiActive(true);
+
+            try {
+                const prompt = `あなたは日本語の文章の編集者です。以下の文章を読み、改善できる箇所を指摘してください。\n` +
+                    `重要なルール:\n` +
+                    `- 指摘する原文の該当箇所(original)は、本文中に実際に存在する文字列をそのまま抜き出すこと（30字以内の短い範囲にすること）。\n` +
+                    `- 書き換え案(suggestion)は、その該当箇所の自然な代替表現を簡潔に示すこと。\n` +
+                    `- 提案の種類を偏らせないこと。「単純に削除する」という提案ばかりにせず、語尾のバリエーション、語順の調整、比喩表現の追加、具体性の強化、漢字とひらがなのバランスなど、多様な観点で指摘すること。\n` +
+                    `- 同じ種類の指摘を複数出さないこと。\n` +
+                    `JSON配列のみを出力し、それ以外のテキスト（前置き、説明、コードブロック記号）は一切含めないこと。\n` +
+                    `各要素は { "original": "本文中の該当箇所", "suggestion": "改善案", "type": "指摘の種類(例: 語尾の単調さ, 冗長表現, 漢字とひらがなのバランス など)" } の形式とすること。\n` +
+                    `本当に改善の余地がなければ空配列 [] を返すこと。指摘は2〜4件程度。\n\n` +
+                    `文章:\n${text}`;
+
+                const raw = await callGemini(prompt);
+                const found = parseIssuesFromAi(raw, text, 'review');
+
+                // 推敲提案は毎回再生成。既存の推敲マークだけ入れ替え、誤字マークは残す
+                typoIssues = typoIssues.filter(t => t.category !== 'review').concat(found);
+
+                if (found.length === 0) {
+                    showAiError('特に気になる点は見つかりませんでした');
+                }
+            } catch (e) {
+                setAiActive(false);
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                if (e.message !== 'APIキーが未設定です') showAiError(e.message || '推敲提案の取得に失敗しました');
+                return;
+            }
+
+            setAiActive(false);
+            btn.classList.remove('loading');
+            btn.disabled = false;
+
+            renderTypoOverlay();
+        }
+
+        // ============================================
+        // Recall システム
+        // ============================================
+
+        let _recallSnapshots   = [];  // { id, ts, content } 新しい順
+        let _recallPreviewIdx  = -1;
+        let _recallIntervalSec = 60;
+        let _recallIntervalTimer = null;
+        let _recallIdleTimer     = null;
+
+        // IDB起動後にDOMContentLoadedから呼ばれる
+        function recallInit() {
+            _recallSnapshots = snapshotLoad();
+            updateRecallUI();
+            startRecallIntervalTimer();
+        }
+
+        // ---- スナップショット保存 ----
+        async function recallSave() {
+            const text = document.getElementById('editor').value;
+            if (!text.trim()) return;
+            if (_recallSnapshots.length > 0 && _recallSnapshots[0].content === text) return;
+
+            const ts = Date.now();
+            const newId = ts; // localStorageではtsをIDとして使う
+            _recallSnapshots.unshift({ id: newId, ts, content: text });
+            if (_recallSnapshots.length > 50) _recallSnapshots.pop();
+
+            snapshotSave(_recallSnapshots);
+            updateRecallUI();
+        }
+
+        // ---- UIの更新 ----
+        function updateRecallUI() {
+            const slider  = document.getElementById('recallSlider');
+            const count   = document.getElementById('recallCount');
+            const display = document.getElementById('recallTimeDisplay');
+            const n = _recallSnapshots.length;
+
+            slider.min = 0;
+            slider.max = Math.max(0, n - 1);
+            // プレビュー中はスライダー位置を保持する（リセットしない）
+            if (_recallPreviewIdx === -1) {
+                slider.value = slider.max; // デフォルトは上端(最新)
+            }
+            count.textContent = n + '件';
+
+            if (n === 0) {
+                display.textContent = '—';
+            } else if (_recallPreviewIdx === -1) {
+                display.textContent = formatRecallTime(_recallSnapshots[0].ts);
+            }
+        }
+
+        function formatRecallTime(ts) {
+            const d = new Date(ts);
+            const hh = String(d.getHours()).padStart(2,'0');
+            const mm = String(d.getMinutes()).padStart(2,'0');
+            const ss = String(d.getSeconds()).padStart(2,'0');
+            return `${hh}:${mm}:${ss}`;
+        }
+
+        // ---- スライダー操作 ----
+        // scaleY(-1)で反転済み: value=max→上端=最新(index 0), value=0→下端=最古(index n-1)
+        function onRecallSlide(val) {
+            const sliderVal = parseInt(val, 10);
+            const max = parseInt(document.getElementById('recallSlider').max, 10);
+            const n = _recallSnapshots.length;
+            if (n === 0) return;
+
+            // value=max → index 0(最新), value=0 → index n-1(最古)
+            const snapIdx = max - sliderVal;
+            const snap = _recallSnapshots[snapIdx];
+            if (!snap) return;
+
+            document.getElementById('recallTimeDisplay').textContent = formatRecallTime(snap.ts);
+
+            if (snapIdx === 0) {
+                clearRecallPreview();
+                return;
+            }
+
+            _recallPreviewIdx = snapIdx;
+            showRecallPreview(snap.content);
+        }
+
+        function showRecallPreview(oldContent) {
+            const overlay = document.getElementById('recallOverlay');
+            const wrapper = document.querySelector('.editor-wrapper');
+            overlay.innerHTML = '<span class="recall-preview-text">' + escapeHtml(oldContent) + '</span>';
+            wrapper.classList.add('recall-previewing');
+            document.getElementById('recallHint').classList.add('show');
+            document.getElementById('recallBar').classList.add('force-show');
+        }
+
+        function clearRecallPreview() {
+            _recallPreviewIdx = -1;
+            const wrapper = document.querySelector('.editor-wrapper');
+            document.getElementById('recallOverlay').innerHTML = '';
+            wrapper.classList.remove('recall-previewing');
+            document.getElementById('recallHint').classList.remove('show');
+            document.getElementById('recallBar').classList.remove('force-show');
+        }
+
+        function onEditorKeydown(e) {
+            // Recall プレビュー中の操作
+            if (_recallPreviewIdx !== -1) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const snap = _recallSnapshots[_recallPreviewIdx];
+                    recallSave().then(() => {
+                        document.getElementById('editor').value = snap.content;
+                        updateStats();
+                        autoSave();
+                        clearRecallPreview();
+                        document.getElementById('recallSlider').value =
+                            document.getElementById('recallSlider').max;
+                        updateRecallUI();
+                    });
+                    return;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    clearRecallPreview();
+                    document.getElementById('recallSlider').value =
+                        document.getElementById('recallSlider').max;
+                    updateRecallUI();
+                    return;
+                }
+            }
+            // Ghost text の既存処理
+            if (ghostText) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const editor = document.getElementById('editor');
+                    editor.value += ghostText;
+                    clearGhostText();
+                    updateStats();
+                    autoSave();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    clearGhostText();
+                } else if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
+                    clearGhostText();
+                }
+            }
+        }
+
+        // ---- 自動保存トリガー群 ----
+
+        // 1. 入力停止10秒後
+        function recallIdleReset() {
+            clearTimeout(_recallIdleTimer);
+            _recallIdleTimer = setTimeout(saveAll, 10000);
+        }
+
+        // 2. ユーザー設定間隔タイマー
+        function startRecallIntervalTimer() {
+            if (_recallIntervalTimer) clearInterval(_recallIntervalTimer);
+            _recallIntervalTimer = setInterval(saveAll, _recallIntervalSec * 1000);
+        }
+
+        // 手動保存ボタン
+        async function recallManualSave() {
+            const btn = document.getElementById('recallSaveBtn');
+            btn.disabled = true;
+            await saveAll();
+            btn.textContent = '✅';
+            btn.classList.add('saved');
+            setTimeout(() => {
+                btn.textContent = '💾';
+                btn.classList.remove('saved');
+                btn.disabled = false;
+            }, 1200);
+        }
+
+        async function recallClearAll() {
+            _recallSnapshots = [];
+            snapshotSave([]);
+            clearRecallPreview();
+            updateRecallUI();
+        }
+
+        function setRecallInterval(sec) {
+            sec = parseInt(sec, 10);
+            _recallIntervalSec = sec;
+            idbPut('settings', sec, 'recallInterval');
+            startRecallIntervalTimer();
+            document.querySelectorAll('.recall-interval-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.sec) === sec);
+            });
+        }
+
+        // ページを閉じるとき
+        // pagehide: saveAll を呼ぶ（非同期だがブラウザが可能な限り実行する）
+        window.addEventListener('pagehide', () => { saveAll(); });
+        // visibilitychange: タブを隠した・切り替えたタイミングでも保存
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') saveAll();
+        });
     </script>
 </body>
 </html>
