@@ -567,7 +567,7 @@
             width: 36px;
             background: rgba(26,26,26,0.82);
             border-radius: 999px;
-            padding: 10px 0;
+            padding: 12px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -578,7 +578,6 @@
             box-shadow: var(--shadow-lg);
             z-index: 40;
             user-select: none;
-            max-height: 70vh;
         }
 
         .recall-trigger:hover .recall-bar,
@@ -589,12 +588,14 @@
         }
 
         .recall-label {
-            font-size: 9px;
-            color: rgba(255,255,255,0.5);
+            font-size: 8px;
+            color: rgba(255,255,255,0.4);
             letter-spacing: 0.5px;
             text-transform: uppercase;
-            margin-bottom: 6px;
-            writing-mode: horizontal-tb;
+            white-space: nowrap;
+            flex-shrink: 0;
+            writing-mode: vertical-lr;
+            margin-bottom: 8px;
         }
 
         .recall-slider-wrap {
@@ -602,54 +603,57 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 100%;
-            padding: 4px 0;
             position: relative;
             user-select: none;
+            width: 36px;
+            padding: 4px 0;
         }
 
         .recall-track {
-            width: 4px;
-            height: 180px;
+            width: 3px;
+            height: 160px;
             background: rgba(255,255,255,0.15);
             border-radius: 2px;
             position: relative;
             cursor: pointer;
         }
 
-        .recall-track-fill {
-            display: none;
-        }
+        .recall-track-fill { display: none; }
 
         .recall-thumb {
             position: absolute;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
+            width: 22px;
+            height: 8px;
             background: var(--color-accent);
-            box-shadow: 0 0 6px var(--color-accent);
+            border-radius: 4px;
             cursor: grab;
-            transition: top 0.1s ease;
+            box-shadow: 0 0 6px var(--color-accent);
+            transition: top 0.08s ease;
+            top: 0%;
         }
 
         .recall-thumb:active { cursor: grabbing; }
 
         .recall-time-display {
-            font-size: 9px;
-            color: rgba(255,255,255,0.7);
-            margin-top: 6px;
+            font-size: 8px;
+            color: rgba(255,255,255,0.6);
             text-align: center;
-            min-height: 24px;
-            line-height: 1.4;
             white-space: nowrap;
+            flex-shrink: 0;
+            margin-top: 6px;
+            writing-mode: vertical-lr;
+            letter-spacing: 0.5px;
         }
 
         .recall-count {
-            font-size: 9px;
-            color: rgba(255,255,255,0.35);
-            margin-top: 2px;
+            font-size: 8px;
+            color: rgba(255,255,255,0.3);
+            white-space: nowrap;
+            flex-shrink: 0;
+            margin-top: 4px;
+            writing-mode: vertical-lr;
         }
 
         .recall-save-btn {
@@ -1418,14 +1422,23 @@
         <!-- Goal Achieved Toast -->
         <div class="goal-toast" id="goalToast">🎉 目標達成しました！</div>
 
-        <!-- Recall Island (左辺) -->
+        <!-- Recall Island (横長・下部左) -->
         <div class="recall-trigger">
             <div class="recall-bar" id="recallBar">
                 <div class="recall-label">Recall</div>
                 <div class="recall-slider-wrap">
                     <div class="recall-track" id="recallTrack">
                         <div class="recall-track-fill" id="recallTrackFill"></div>
-                        <div class="recall-thumb" id="recallThumb"></div>
+                        <div class="recall-thumb" id="recallThumb">
+                            <svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
+                                <circle cx="14" cy="14" r="11" fill="none" stroke="var(--color-accent)" stroke-width="3"
+                                    stroke-dasharray="69.1" stroke-dashoffset="69.1"
+                                    stroke-linecap="round" transform="rotate(-90 14 14)"
+                                    id="recallThumbArc"/>
+                                <circle cx="14" cy="14" r="5" fill="var(--color-accent)" id="recallThumbDot"/>
+                            </svg>
+                        </div>
                     </div>
                 </div>
                 <div class="recall-time-display" id="recallTimeDisplay">—</div>
@@ -2257,17 +2270,24 @@
             const n = _recallSnapshots.length;
             const track = document.getElementById('recallTrack');
             if (!track) return;
-            const trackH = track.clientHeight || 180;
+            const trackW = track.clientWidth || 200;
             const pct = n <= 1 ? 0 : idx / (n - 1);
-            const topPx = pct * trackH;
-            document.getElementById('recallThumb').style.top = topPx + 'px';
-            document.getElementById('recallTrackFill').style.height = topPx + 'px';
+            const leftPx = pct * trackW;
+            const thumb = document.getElementById('recallThumb');
+            thumb.style.left = leftPx + 'px';
+            thumb.style.transition = _recallDragging ? 'none' : 'left 0.08s ease';
+
+            const arc = document.getElementById('recallThumbArc');
+            if (arc) {
+                const circumference = 69.1;
+                arc.style.strokeDashoffset = circumference * (1 - pct);
+            }
         }
 
-        function recallIdxFromY(clientY) {
+        function recallIdxFromX(clientX) {
             const track = document.getElementById('recallTrack');
             const rect = track.getBoundingClientRect();
-            const pct = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+            const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             const n = _recallSnapshots.length;
             return Math.round(pct * (n - 1));
         }
@@ -2277,15 +2297,15 @@
             const thumb = document.getElementById('recallThumb');
             if (!track) return;
 
-            const onMove = (clientY) => {
-                const idx = recallIdxFromY(clientY);
+            const onMove = (clientX) => {
+                const idx = recallIdxFromX(clientX);
                 recallSetThumb(idx);
                 onRecallSlide(idx);
             };
 
             track.addEventListener('mousedown', (e) => {
                 _recallDragging = true;
-                onMove(e.clientY);
+                onMove(e.clientX);
                 e.preventDefault();
             });
             thumb.addEventListener('mousedown', (e) => {
@@ -2295,18 +2315,18 @@
             });
             document.addEventListener('mousemove', (e) => {
                 if (!_recallDragging) return;
-                onMove(e.clientY);
+                onMove(e.clientX);
             });
             document.addEventListener('mouseup', () => { _recallDragging = false; });
 
             track.addEventListener('touchstart', (e) => {
                 _recallDragging = true;
-                onMove(e.touches[0].clientY);
+                onMove(e.touches[0].clientX);
                 e.preventDefault();
             }, { passive: false });
             document.addEventListener('touchmove', (e) => {
                 if (!_recallDragging) return;
-                onMove(e.touches[0].clientY);
+                onMove(e.touches[0].clientX);
             });
             document.addEventListener('touchend', () => { _recallDragging = false; });
         }
