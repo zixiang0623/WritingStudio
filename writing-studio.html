@@ -603,25 +603,38 @@
             flex-direction: column;
             align-items: center;
             width: 100%;
-            padding: 0 6px;
+            padding: 4px 0;
             position: relative;
+            user-select: none;
         }
 
-        .recall-slider {
-            -webkit-appearance: slider-vertical;
-            appearance: slider-vertical;
-            writing-mode: vertical-lr;
-            direction: rtl;
+        .recall-track {
             width: 4px;
             height: 180px;
-            cursor: pointer;
-            accent-color: var(--color-accent);
             background: rgba(255,255,255,0.15);
             border-radius: 2px;
-            outline: none;
-            border: none;
-            transform: scaleY(-1);
+            position: relative;
+            cursor: pointer;
         }
+
+        .recall-track-fill {
+            display: none;
+        }
+
+        .recall-thumb {
+            position: absolute;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--color-accent);
+            box-shadow: 0 0 6px var(--color-accent);
+            cursor: grab;
+            transition: top 0.1s ease;
+        }
+
+        .recall-thumb:active { cursor: grabbing; }
 
         .recall-time-display {
             font-size: 9px;
@@ -1410,9 +1423,10 @@
             <div class="recall-bar" id="recallBar">
                 <div class="recall-label">Recall</div>
                 <div class="recall-slider-wrap">
-                    <input type="range" class="recall-slider" id="recallSlider"
-                           min="0" max="0" value="0" step="1"
-                           oninput="onRecallSlide(this.value)">
+                    <div class="recall-track" id="recallTrack">
+                        <div class="recall-track-fill" id="recallTrackFill"></div>
+                        <div class="recall-thumb" id="recallThumb"></div>
+                    </div>
                 </div>
                 <div class="recall-time-display" id="recallTimeDisplay">—</div>
                 <div class="recall-count" id="recallCount">0件</div>
@@ -1486,39 +1500,145 @@
 
     <script>
         // ============================================
-        // ストレージ層（全てlocalStorage）
+        // ストレージ層
+        // 設定: localStorage
+        // Recallスナップショット: SQLite Wasm + OPFS
+        //   ※ http(s)://環境必須。file://では自動的にlocalStorageにフォールバック
         // ============================================
 
-        function lsGet(key) {
-            return localStorage.getItem('ws_' + key) ?? undefined;
-        }
-        function lsSet(key, value) {
-            localStorage.setItem('ws_' + key, String(value));
-        }
-        function lsDel(key) {
-            localStorage.removeItem('ws_' + key);
-        }
+        let _useOpfs = false; // OPFS初期化成功フラグ
+        let _worker  = null;  // SQLite Wasm Worker
 
-        // Recallスナップショット専用（JSON配列でまとめて保存）
-        function snapshotLoad() {
+        // --- localStorage ラッパー（設定・フォールバック共用） ---
+        function lsGet(key)         { return localStorage.getItem('ws_' + key) ?? undefined; }
+        function lsSet(key, value)  { localStorage.setItem('ws_' + key, String(value)); }
+        function lsDel(key)         { localStorage.removeItem('ws_' + key); }
+
+        // --- スナップショットのlocalStorage版（フォールバック） ---
+        function snapshotLoadLS() {
             try { return JSON.parse(localStorage.getItem('ws_snapshots') || '[]'); }
             catch(e) { return []; }
         }
-        function snapshotSave(arr) {
-            // 新しい順50件に絞って保存
+        function snapshotSaveLS(arr) {
             const trimmed = arr.slice(0, 50);
             try { localStorage.setItem('ws_snapshots', JSON.stringify(trimmed)); }
             catch(e) {
-                // localStorageがQuotaを超えた場合は古いものを削って再試行
                 const half = trimmed.slice(0, Math.floor(trimmed.length / 2));
                 try { localStorage.setItem('ws_snapshots', JSON.stringify(half)); } catch(e2) {}
             }
         }
 
-        // 後方互換エイリアス（既存呼び出し箇所はそのまま）
-        async function idbGet(store, key)        { return lsGet(key); }
+        // --- SQLite Wasm Worker初期化 ---
+        async function opfsInit() {
+            // Workerを使ったSQLite Wasm（OPFSアクセスにはWorkerが必要）
+            const workerUrl = 'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm@3.46.1-build1/sqlite-wasm/jswasm/sqlite3-worker1.js';
+
+            return new Promise((resolve) => {
+                let ready = false;
+                const w = new Worker(workerUrl, { type: 'classic' });
+
+                const timeout = setTimeout(() => {
+                    if (!ready) { w.terminate(); resolve(false); }
+                }, 8000);
+
+                w.onmessage = async (e) => {
+                    const msg = e.data;
+                    if (msg.type === 'sqlite3-api' && msg.result === 'worker1-ready') {
+                        ready = true;
+                        clearTimeout(timeout);
+                        // DBをopen
+                        w.postMessage({ type: 'open', args: { filename: 'file:writingstudio.db?vfs=opfs' } });
+                    } else if (msg.type === 'open') {
+                        if (msg.result?.dbId) {
+                            _worker = w;
+                            _dbId = msg.result.dbId;
+                            // テーブル作成
+                            await workerExec(`
+                                CREATE TABLE IF NOT EXISTS snapshots (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    ts INTEGER NOT NULL,
+                                    content TEXT NOT NULL
+                                );
+                                CREATE INDEX IF NOT EXISTS idx_ts ON snapshots(ts DESC);
+                            `);
+                            _useOpfs = true;
+                            resolve(true);
+                        } else {
+                            w.terminate();
+                            resolve(false);
+                        }
+                    } else if (msg.type === 'error') {
+                        w.terminate();
+                        resolve(false);
+                    }
+                };
+                w.onerror = () => { clearTimeout(timeout); resolve(false); };
+            });
+        }
+
+        let _dbId = null;
+        let _msgId = 0;
+
+        function workerExec(sql, bind) {
+            return new Promise((resolve, reject) => {
+                const id = ++_msgId;
+                const handler = (e) => {
+                    if (e.data.messageId !== id) return;
+                    _worker.removeEventListener('message', handler);
+                    if (e.data.type === 'error') reject(new Error(e.data.result?.message || 'exec error'));
+                    else resolve(e.data.result);
+                };
+                _worker.addEventListener('message', handler);
+                _worker.postMessage({
+                    type: 'exec',
+                    messageId: id,
+                    args: { dbId: _dbId, sql, bind: bind || [], rowMode: 'array' }
+                });
+            });
+        }
+
+        // --- 後方互換エイリアス（settings系はlocalStorage固定） ---
         async function idbPut(store, value, key) { lsSet(key, value); }
         async function idbDelete(store, key)     { lsDel(key); }
+
+        // ============================================
+        // Recallスナップショット操作（OPFS or localStorage）
+        // ============================================
+        async function snapshotInsert(ts, content) {
+            if (_useOpfs) {
+                await workerExec(
+                    'INSERT INTO snapshots(ts,content) VALUES(?,?)',
+                    [ts, content]
+                );
+                // 100件超えたら古いものを削除
+                await workerExec(
+                    'DELETE FROM snapshots WHERE id NOT IN (SELECT id FROM snapshots ORDER BY ts DESC LIMIT 100)'
+                );
+            } else {
+                const arr = snapshotLoadLS();
+                arr.unshift({ id: ts, ts, content });
+                snapshotSaveLS(arr);
+            }
+        }
+
+        async function snapshotLoadAll() {
+            if (_useOpfs) {
+                const result = await workerExec(
+                    'SELECT id,ts,content FROM snapshots ORDER BY ts DESC LIMIT 100'
+                );
+                return (result?.resultRows || []).map(r => ({ id: r[0], ts: r[1], content: r[2] }));
+            } else {
+                return snapshotLoadLS();
+            }
+        }
+
+        async function snapshotClearAll() {
+            if (_useOpfs) {
+                await workerExec('DELETE FROM snapshots');
+            } else {
+                snapshotSaveLS([]);
+            }
+        }
 
         // ============================================
         // State Management
@@ -1528,7 +1648,7 @@
         let goalAchievedShown = false;
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const editor = document.getElementById('editor');
 
             // --- 設定復元（localStorage・即時同期） ---
@@ -1560,7 +1680,12 @@
             if (savedKey) { _cachedApiKey = savedKey; apiKeySet = true; updateKeyBtnState(); }
 
             updateStats();
-            recallInit();
+
+            // OPFS初期化（失敗したらlocalStorageフォールバック）
+            const opfsOk = await opfsInit().catch(() => false);
+            if (!opfsOk) console.info('WritingStudio: OPFS unavailable, using localStorage for Recall');
+
+            await recallInit();
 
             editor.addEventListener('input', recallIdleReset);
 
@@ -1746,7 +1871,13 @@
             apiKeySet = true;
             document.getElementById('aiKeyInput').value = '';
             updateKeyBtnState();
-            toggleKeyPanel();
+
+            // APIキー登録時：虹色グローを一瞬当てる（AI実行時と同じ）
+            const panel = document.getElementById('aiKeyPanel');
+            panel.classList.remove('show');
+            updateAiBarForceShow();
+            setAiActive(true);
+            setTimeout(() => setAiActive(false), 1200);
         }
 
         function getApiKey() {
@@ -2098,8 +2229,9 @@
         let _recallIdleTimer     = null;
 
         // IDB起動後にDOMContentLoadedから呼ばれる
-        function recallInit() {
-            _recallSnapshots = snapshotLoad();
+        async function recallInit() {
+            _recallSnapshots = await snapshotLoadAll();
+            initRecallTrack();
             updateRecallUI();
             startRecallIntervalTimer();
         }
@@ -2111,33 +2243,86 @@
             if (_recallSnapshots.length > 0 && _recallSnapshots[0].content === text) return;
 
             const ts = Date.now();
-            const newId = ts; // localStorageではtsをIDとして使う
-            _recallSnapshots.unshift({ id: newId, ts, content: text });
-            if (_recallSnapshots.length > 50) _recallSnapshots.pop();
-
-            snapshotSave(_recallSnapshots);
+            await snapshotInsert(ts, text);
+            _recallSnapshots.unshift({ id: ts, ts, content: text });
+            if (_recallSnapshots.length > 100) _recallSnapshots.pop();
             updateRecallUI();
         }
 
         // ---- UIの更新 ----
+        // ---- カスタムシークバー ----
+        let _recallDragging = false;
+
+        function recallSetThumb(idx) {
+            const n = _recallSnapshots.length;
+            const track = document.getElementById('recallTrack');
+            if (!track) return;
+            const trackH = track.clientHeight || 180;
+            const pct = n <= 1 ? 0 : idx / (n - 1);
+            const topPx = pct * trackH;
+            document.getElementById('recallThumb').style.top = topPx + 'px';
+            document.getElementById('recallTrackFill').style.height = topPx + 'px';
+        }
+
+        function recallIdxFromY(clientY) {
+            const track = document.getElementById('recallTrack');
+            const rect = track.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+            const n = _recallSnapshots.length;
+            return Math.round(pct * (n - 1));
+        }
+
+        function initRecallTrack() {
+            const track = document.getElementById('recallTrack');
+            const thumb = document.getElementById('recallThumb');
+            if (!track) return;
+
+            const onMove = (clientY) => {
+                const idx = recallIdxFromY(clientY);
+                recallSetThumb(idx);
+                onRecallSlide(idx);
+            };
+
+            track.addEventListener('mousedown', (e) => {
+                _recallDragging = true;
+                onMove(e.clientY);
+                e.preventDefault();
+            });
+            thumb.addEventListener('mousedown', (e) => {
+                _recallDragging = true;
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!_recallDragging) return;
+                onMove(e.clientY);
+            });
+            document.addEventListener('mouseup', () => { _recallDragging = false; });
+
+            track.addEventListener('touchstart', (e) => {
+                _recallDragging = true;
+                onMove(e.touches[0].clientY);
+                e.preventDefault();
+            }, { passive: false });
+            document.addEventListener('touchmove', (e) => {
+                if (!_recallDragging) return;
+                onMove(e.touches[0].clientY);
+            });
+            document.addEventListener('touchend', () => { _recallDragging = false; });
+        }
+
         function updateRecallUI() {
-            const slider  = document.getElementById('recallSlider');
             const count   = document.getElementById('recallCount');
             const display = document.getElementById('recallTimeDisplay');
             const n = _recallSnapshots.length;
-
-            slider.min = 0;
-            slider.max = Math.max(0, n - 1);
-            // プレビュー中はスライダー位置を保持する（リセットしない）
-            if (_recallPreviewIdx === -1) {
-                slider.value = slider.max; // デフォルトは上端(最新)
-            }
             count.textContent = n + '件';
 
             if (n === 0) {
                 display.textContent = '—';
+                recallSetThumb(0);
             } else if (_recallPreviewIdx === -1) {
                 display.textContent = formatRecallTime(_recallSnapshots[0].ts);
+                recallSetThumb(0);
             }
         }
 
@@ -2149,27 +2334,18 @@
             return `${hh}:${mm}:${ss}`;
         }
 
-        // ---- スライダー操作 ----
-        // scaleY(-1)で反転済み: value=max→上端=最新(index 0), value=0→下端=最古(index n-1)
-        function onRecallSlide(val) {
-            const sliderVal = parseInt(val, 10);
-            const max = parseInt(document.getElementById('recallSlider').max, 10);
+        function onRecallSlide(idx) {
             const n = _recallSnapshots.length;
             if (n === 0) return;
-
-            // value=max → index 0(最新), value=0 → index n-1(最古)
-            const snapIdx = max - sliderVal;
-            const snap = _recallSnapshots[snapIdx];
+            idx = Math.max(0, Math.min(n - 1, idx));
+            const snap = _recallSnapshots[idx];
             if (!snap) return;
-
             document.getElementById('recallTimeDisplay').textContent = formatRecallTime(snap.ts);
-
-            if (snapIdx === 0) {
+            if (idx === 0) {
                 clearRecallPreview();
                 return;
             }
-
-            _recallPreviewIdx = snapIdx;
+            _recallPreviewIdx = idx;
             showRecallPreview(snap.content);
         }
 
@@ -2202,16 +2378,14 @@
                         updateStats();
                         autoSave();
                         clearRecallPreview();
-                        document.getElementById('recallSlider').value =
-                            document.getElementById('recallSlider').max;
+                        recallSetThumb(0);
                         updateRecallUI();
                     });
                     return;
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     clearRecallPreview();
-                    document.getElementById('recallSlider').value =
-                        document.getElementById('recallSlider').max;
+                    recallSetThumb(0);
                     updateRecallUI();
                     return;
                 }
@@ -2263,8 +2437,8 @@
         }
 
         async function recallClearAll() {
+            await snapshotClearAll();
             _recallSnapshots = [];
-            snapshotSave([]);
             clearRecallPreview();
             updateRecallUI();
         }
