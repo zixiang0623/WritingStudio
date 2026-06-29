@@ -1429,16 +1429,7 @@
                 <div class="recall-slider-wrap">
                     <div class="recall-track" id="recallTrack">
                         <div class="recall-track-fill" id="recallTrackFill"></div>
-                        <div class="recall-thumb" id="recallThumb">
-                            <svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
-                                <circle cx="14" cy="14" r="11" fill="none" stroke="var(--color-accent)" stroke-width="3"
-                                    stroke-dasharray="69.1" stroke-dashoffset="69.1"
-                                    stroke-linecap="round" transform="rotate(-90 14 14)"
-                                    id="recallThumbArc"/>
-                                <circle cx="14" cy="14" r="5" fill="var(--color-accent)" id="recallThumbDot"/>
-                            </svg>
-                        </div>
+                        <div class="recall-thumb" id="recallThumb"></div>
                     </div>
                 </div>
                 <div class="recall-time-display" id="recallTimeDisplay">—</div>
@@ -2270,24 +2261,18 @@
             const n = _recallSnapshots.length;
             const track = document.getElementById('recallTrack');
             if (!track) return;
-            const trackW = track.clientWidth || 200;
-            const pct = n <= 1 ? 0 : idx / (n - 1);
-            const leftPx = pct * trackW;
+            const trackH = track.clientHeight || 160;
+            const pct = n <= 1 ? 0 : idx / (n - 1); // 0=上(最新), 1=下(最古)
+            const topPx = pct * trackH;
             const thumb = document.getElementById('recallThumb');
-            thumb.style.left = leftPx + 'px';
-            thumb.style.transition = _recallDragging ? 'none' : 'left 0.08s ease';
-
-            const arc = document.getElementById('recallThumbArc');
-            if (arc) {
-                const circumference = 69.1;
-                arc.style.strokeDashoffset = circumference * (1 - pct);
-            }
+            thumb.style.top = topPx + 'px';
+            thumb.style.transition = _recallDragging ? 'none' : 'top 0.08s ease';
         }
 
-        function recallIdxFromX(clientX) {
+        function recallIdxFromY(clientY) {
             const track = document.getElementById('recallTrack');
             const rect = track.getBoundingClientRect();
-            const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const pct = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
             const n = _recallSnapshots.length;
             return Math.round(pct * (n - 1));
         }
@@ -2297,37 +2282,19 @@
             const thumb = document.getElementById('recallThumb');
             if (!track) return;
 
-            const onMove = (clientX) => {
-                const idx = recallIdxFromX(clientX);
+            const onMove = (clientY) => {
+                const idx = recallIdxFromY(clientY);
                 recallSetThumb(idx);
                 onRecallSlide(idx);
             };
 
-            track.addEventListener('mousedown', (e) => {
-                _recallDragging = true;
-                onMove(e.clientX);
-                e.preventDefault();
-            });
-            thumb.addEventListener('mousedown', (e) => {
-                _recallDragging = true;
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            document.addEventListener('mousemove', (e) => {
-                if (!_recallDragging) return;
-                onMove(e.clientX);
-            });
+            track.addEventListener('mousedown', (e) => { _recallDragging = true; onMove(e.clientY); e.preventDefault(); });
+            thumb.addEventListener('mousedown', (e) => { _recallDragging = true; e.preventDefault(); e.stopPropagation(); });
+            document.addEventListener('mousemove', (e) => { if (_recallDragging) onMove(e.clientY); });
             document.addEventListener('mouseup', () => { _recallDragging = false; });
 
-            track.addEventListener('touchstart', (e) => {
-                _recallDragging = true;
-                onMove(e.touches[0].clientX);
-                e.preventDefault();
-            }, { passive: false });
-            document.addEventListener('touchmove', (e) => {
-                if (!_recallDragging) return;
-                onMove(e.touches[0].clientX);
-            });
+            track.addEventListener('touchstart', (e) => { _recallDragging = true; onMove(e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+            document.addEventListener('touchmove', (e) => { if (_recallDragging) onMove(e.touches[0].clientY); });
             document.addEventListener('touchend', () => { _recallDragging = false; });
         }
 
