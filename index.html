@@ -1353,7 +1353,67 @@
             }
         }
     </style>
-</head>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .md-overlay {
+            position: absolute;
+            inset: 0;
+            padding: 20px;
+            border: 1px solid transparent;
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+            background: var(--color-surface);
+            color: var(--color-text);
+            overflow-y: auto;
+            z-index: 4;
+            border-radius: 12px;
+            display: none;
+            box-sizing: border-box;
+        }
+        .md-overlay.show { display: block; }
+        .md-overlay h1,.md-overlay h2,.md-overlay h3,
+        .md-overlay h4,.md-overlay h5,.md-overlay h6 {
+            font-weight: 700; margin: 1em 0 0.4em; line-height: 1.3; color: var(--color-text);
+        }
+        .md-overlay h1 { font-size: 1.8em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+        .md-overlay h2 { font-size: 1.4em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.2em; }
+        .md-overlay h3 { font-size: 1.2em; }
+        .md-overlay p  { margin: 0.6em 0; }
+        .md-overlay strong { font-weight: 700; }
+        .md-overlay em { font-style: italic; }
+        .md-overlay ul,.md-overlay ol { padding-left: 1.6em; margin: 0.4em 0; }
+        .md-overlay li { margin: 0.2em 0; }
+        .md-overlay code {
+            font-family: 'SF Mono', Consolas, monospace;
+            background: var(--color-surface-light);
+            padding: 0.1em 0.4em;
+            border-radius: 4px;
+            font-size: 0.88em;
+        }
+        .md-overlay pre {
+            background: var(--color-surface-light);
+            padding: 12px 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 0.8em 0;
+        }
+        .md-overlay pre code { background: none; padding: 0; }
+        .md-overlay blockquote {
+            border-left: 3px solid var(--color-accent);
+            margin: 0.6em 0;
+            padding: 0.2em 1em;
+            color: var(--color-text-secondary);
+        }
+        .md-overlay hr { border: none; border-top: 1px solid var(--color-border); margin: 1em 0; }
+        .md-overlay a { color: var(--color-accent); text-decoration: underline; }
+        .md-overlay table { border-collapse: collapse; width: 100%; margin: 0.6em 0; }
+        .md-overlay th,.md-overlay td { border: 1px solid var(--color-border); padding: 6px 10px; }
+        .md-overlay th { background: var(--color-surface-light); font-weight: 600; }
+        .editor-wrapper.md-previewing textarea { opacity: 0; pointer-events: none; }
+        .btn-export.active { background: var(--color-accent); color: #fff; }
+    </style>
 <body>
     <div class="container">
         <!-- Main Area -->
@@ -1372,6 +1432,7 @@
                     <div class="ghost-overlay" id="ghostOverlay"></div>
                     <div class="typo-overlay" id="typoOverlay"></div>
                     <div class="recall-overlay" id="recallOverlay"></div>
+                    <div class="md-overlay" id="mdOverlay"></div>
                     <div class="ghost-hint" id="ghostHint">Tab で確定 / Esc で取り消し</div>
                     <div class="typo-tooltip" id="typoTooltip"></div>
                 </div>
@@ -1415,6 +1476,7 @@
                 </div>
             </div>
             <button class="btn-export" onclick="exportMD()">📄 MD出力</button>
+            <button class="btn-export" id="mdPreviewBtn" onclick="toggleMdPreview()">👁 MD表示</button>
         </div>
         </div>
 
@@ -1983,6 +2045,9 @@
         function onEditorInput() {
             if (ghostText) clearGhostText();
             scheduleTypoCheck();
+            if (_mdMode) {
+                document.getElementById('mdOverlay').innerHTML = renderMd(document.getElementById('editor').value);
+            }
         }
 
         function syncOverlayScroll() {
@@ -2335,10 +2400,56 @@
             showRecallPreview(snap.content);
         }
 
+        // ============================================
+        // MD プレビュー
+        // ============================================
+        let _mdMode = false;
+
+        function renderMd(text) {
+            if (typeof marked === 'undefined') return '<pre>' + escapeHtml(text) + '</pre>';
+            return marked.parse(text);
+        }
+
+        function toggleMdPreview() {
+            _mdMode = !_mdMode;
+            const btn     = document.getElementById('mdPreviewBtn');
+            const overlay = document.getElementById('mdOverlay');
+            const wrapper = document.querySelector('.editor-wrapper');
+            const editor  = document.getElementById('editor');
+
+            if (_mdMode) {
+                overlay.innerHTML = renderMd(editor.value);
+                overlay.classList.add('show');
+                wrapper.classList.add('md-previewing');
+                btn.classList.add('active');
+                btn.textContent = '✏️ 編集に戻る';
+            } else {
+                overlay.innerHTML = '';
+                overlay.classList.remove('show');
+                wrapper.classList.remove('md-previewing');
+                btn.classList.remove('active');
+                btn.textContent = '👁 MD表示';
+            }
+        }
+
         function showRecallPreview(oldContent) {
             const overlay = document.getElementById('recallOverlay');
             const wrapper = document.querySelector('.editor-wrapper');
-            overlay.innerHTML = '<span class="recall-preview-text">' + escapeHtml(oldContent) + '</span>';
+
+            if (_mdMode) {
+                overlay.style.cssText = `
+                    position:absolute; inset:0; padding:20px;
+                    font-size:16px; line-height:1.8; letter-spacing:0.3px;
+                    font-family:inherit; background:var(--color-surface);
+                    color:var(--color-text); overflow-y:auto; z-index:5;
+                    border-radius:12px; box-sizing:border-box; opacity:0.75;
+                `;
+                overlay.innerHTML = renderMd(oldContent);
+            } else {
+                overlay.style.cssText = '';
+                overlay.innerHTML = '<span class="recall-preview-text">' + escapeHtml(oldContent) + '</span>';
+            }
+
             wrapper.classList.add('recall-previewing');
             document.getElementById('recallHint').classList.add('show');
             document.getElementById('recallBar').classList.add('force-show');
