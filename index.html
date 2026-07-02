@@ -1353,66 +1353,95 @@
             }
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+    // 自前MDパーサー（外部依存なし）
+    const marked = {
+        parse: function(src) {
+            if (!src) return '';
+            function escMd(s) {
+                return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            }
+            function inline(s) {
+                return escMd(s)
+                    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+                    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+                    .replace(/__(.+?)__/g,'<strong>$1</strong>')
+                    .replace(/_(.+?)_/g,'<em>$1</em>')
+                    .replace(/`(.+?)`/g,'<code>$1</code>')
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
+            }
+            const blocks = src.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split(/\n\n+/);
+            return blocks.map(b => {
+                b = b.trim();
+                if (!b) return '';
+                const hm = b.match(/^(#{1,6}) (.+)/);
+                if (hm) return `<h${hm[1].length}>${inline(hm[2])}</h${hm[1].length}>`;
+                if (b.startsWith('```')) {
+                    const code = b.replace(/^```[^\n]*\n?/,'').replace(/\n?```$/,'');
+                    return `<pre><code>${escMd(code)}</code></pre>`;
+                }
+                if (b.startsWith('> ')) {
+                    return `<blockquote><p>${inline(b.replace(/^> ?/gm,''))}</p></blockquote>`;
+                }
+                if (/^[-*_]{3,}$/.test(b)) return '<hr>';
+                if (/^[-*+] /m.test(b)) {
+                    const items = b.split('\n').filter(l=>l.trim()).map(l=>`<li>${inline(l.replace(/^[-*+] /,''))}</li>`);
+                    return `<ul>${items.join('')}</ul>`;
+                }
+                if (/^\d+\. /m.test(b)) {
+                    const items = b.split('\n').filter(l=>l.trim()).map(l=>`<li>${inline(l.replace(/^\d+\. /,''))}</li>`);
+                    return `<ol>${items.join('')}</ol>`;
+                }
+                return `<p>${inline(b.replace(/\n/g,' '))}</p>`;
+            }).join('\n');
+        }
+    };
+    </script>
     <style>
         .md-overlay {
-            position: absolute;
-            inset: 0;
-            padding: 20px;
-            border: 1px solid transparent;
-            font-size: 16px;
-            line-height: 1.8;
-            letter-spacing: 0.3px;
-            font-family: inherit;
-            background: var(--color-surface);
-            color: var(--color-text);
-            overflow-y: auto;
-            z-index: 4;
-            border-radius: 12px;
-            display: none;
-            box-sizing: border-box;
+            position: absolute; inset: 0; padding: 20px;
+            border: 1px solid transparent; font-size: 16px; line-height: 1.8;
+            letter-spacing: 0.3px; font-family: inherit;
+            background: var(--color-surface); color: var(--color-text);
+            overflow-y: auto; z-index: 4; border-radius: 12px;
+            display: none; box-sizing: border-box;
         }
         .md-overlay.show { display: block; }
         .md-overlay h1,.md-overlay h2,.md-overlay h3,
-        .md-overlay h4,.md-overlay h5,.md-overlay h6 {
-            font-weight: 700; margin: 1em 0 0.4em; line-height: 1.3; color: var(--color-text);
+        .md-overlay h4,.md-overlay h5,.md-overlay h6 { font-weight:700; margin:1em 0 0.4em; line-height:1.3; color:var(--color-text); }
+        .md-overlay h1 { font-size:1.8em; border-bottom:1px solid var(--color-border); padding-bottom:0.3em; }
+        .md-overlay h2 { font-size:1.4em; border-bottom:1px solid var(--color-border); padding-bottom:0.2em; }
+        .md-overlay h3 { font-size:1.2em; }
+        .md-overlay p  { margin:0.6em 0; }
+        .md-overlay strong { font-weight:700; }
+        .md-overlay em { font-style:italic; }
+        .md-overlay ul,.md-overlay ol { padding-left:1.6em; margin:0.4em 0; }
+        .md-overlay li { margin:0.2em 0; }
+        .md-overlay code { font-family:'SF Mono',Consolas,monospace; background:rgba(0,0,0,0.06); padding:0.1em 0.4em; border-radius:4px; font-size:0.88em; }
+        .md-overlay pre { background:rgba(0,0,0,0.06); padding:12px 16px; border-radius:8px; overflow-x:auto; margin:0.8em 0; }
+        .md-overlay pre code { background:none; padding:0; }
+        .md-overlay blockquote { border-left:3px solid var(--color-accent); margin:0.6em 0; padding:0.2em 1em; color:var(--color-text-secondary); }
+        .md-overlay hr { border:none; border-top:1px solid var(--color-border); margin:1em 0; }
+        .md-overlay a { color:var(--color-accent); text-decoration:underline; }
+        .md-overlay table { border-collapse:collapse; width:100%; margin:0.6em 0; }
+        .md-overlay th,.md-overlay td { border:1px solid var(--color-border); padding:6px 10px; }
+        .md-overlay th { font-weight:600; }
+        .editor-wrapper.md-previewing textarea { opacity:0; pointer-events:none; }
+
+        .md-toggle-wrap { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+        .md-toggle-label { font-size:10px; color:rgba(255,255,255,0.55); white-space:nowrap; }
+        .md-toggle {
+            width:36px; height:20px; border-radius:999px;
+            background:rgba(255,255,255,0.15); border:none; cursor:pointer;
+            position:relative; transition:background 0.2s ease; padding:0; flex-shrink:0;
         }
-        .md-overlay h1 { font-size: 1.8em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
-        .md-overlay h2 { font-size: 1.4em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.2em; }
-        .md-overlay h3 { font-size: 1.2em; }
-        .md-overlay p  { margin: 0.6em 0; }
-        .md-overlay strong { font-weight: 700; }
-        .md-overlay em { font-style: italic; }
-        .md-overlay ul,.md-overlay ol { padding-left: 1.6em; margin: 0.4em 0; }
-        .md-overlay li { margin: 0.2em 0; }
-        .md-overlay code {
-            font-family: 'SF Mono', Consolas, monospace;
-            background: var(--color-surface-light);
-            padding: 0.1em 0.4em;
-            border-radius: 4px;
-            font-size: 0.88em;
+        .md-toggle::after {
+            content:''; position:absolute; top:3px; left:3px;
+            width:14px; height:14px; border-radius:50%; background:#fff;
+            transition:left 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.3);
         }
-        .md-overlay pre {
-            background: var(--color-surface-light);
-            padding: 12px 16px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 0.8em 0;
-        }
-        .md-overlay pre code { background: none; padding: 0; }
-        .md-overlay blockquote {
-            border-left: 3px solid var(--color-accent);
-            margin: 0.6em 0;
-            padding: 0.2em 1em;
-            color: var(--color-text-secondary);
-        }
-        .md-overlay hr { border: none; border-top: 1px solid var(--color-border); margin: 1em 0; }
-        .md-overlay a { color: var(--color-accent); text-decoration: underline; }
-        .md-overlay table { border-collapse: collapse; width: 100%; margin: 0.6em 0; }
-        .md-overlay th,.md-overlay td { border: 1px solid var(--color-border); padding: 6px 10px; }
-        .md-overlay th { background: var(--color-surface-light); font-weight: 600; }
-        .editor-wrapper.md-previewing textarea { opacity: 0; pointer-events: none; }
-        .btn-export.active { background: var(--color-accent); color: #fff; }
+        .md-toggle.on { background:var(--color-success); }
+        .md-toggle.on::after { left:19px; }
     </style>
 <body>
     <div class="container">
@@ -1476,7 +1505,10 @@
                 </div>
             </div>
             <button class="btn-export" onclick="exportMD()">📄 MD出力</button>
-            <button class="btn-export" id="mdPreviewBtn" onclick="toggleMdPreview()">👁 MD表示</button>
+            <div class="md-toggle-wrap">
+                <span class="md-toggle-label">MD表示</span>
+                <button class="md-toggle" id="mdToggle" onclick="toggleMdPreview()" title="MDプレビュー"></button>
+            </div>
         </div>
         </div>
 
@@ -2406,29 +2438,32 @@
         let _mdMode = false;
 
         function renderMd(text) {
-            if (typeof marked === 'undefined') return '<pre>' + escapeHtml(text) + '</pre>';
-            return marked.parse(text);
+            if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
+            return text.split(/\n\n+/).map(block => {
+                if (/^#{1,6}\s/.test(block)) { const m=block.match(/^(#{1,6})\s+(.*)/); return m?`<h${m[1].length}>${m[2]}</h${m[1].length}>`:`<p>${block}</p>`; }
+                if (/^[-*+]\s/.test(block)) { const items=block.split('\n').filter(l=>l.trim()).map(l=>`<li>${l.replace(/^[-*+]\s+/,'')}</li>`); return `<ul>${items.join('')}</ul>`; }
+                if (/^>\s/.test(block)) return `<blockquote><p>${block.replace(/^>\s?/gm,'')}</p></blockquote>`;
+                if (/^```/.test(block)) return `<pre><code>${block.replace(/^```[^\n]*\n?/,'').replace(/```\s*$/,'')}</code></pre>`;
+                return `<p>${block.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/`(.+?)`/g,'<code>$1</code>')}</p>`;
+            }).join('\n');
         }
 
         function toggleMdPreview() {
             _mdMode = !_mdMode;
-            const btn     = document.getElementById('mdPreviewBtn');
+            const toggle  = document.getElementById('mdToggle');
             const overlay = document.getElementById('mdOverlay');
             const wrapper = document.querySelector('.editor-wrapper');
             const editor  = document.getElementById('editor');
-
             if (_mdMode) {
                 overlay.innerHTML = renderMd(editor.value);
                 overlay.classList.add('show');
                 wrapper.classList.add('md-previewing');
-                btn.classList.add('active');
-                btn.textContent = '✏️ 編集に戻る';
+                toggle.classList.add('on');
             } else {
                 overlay.innerHTML = '';
                 overlay.classList.remove('show');
                 wrapper.classList.remove('md-previewing');
-                btn.classList.remove('active');
-                btn.textContent = '👁 MD表示';
+                toggle.classList.remove('on');
             }
         }
 
